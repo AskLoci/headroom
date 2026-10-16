@@ -1,0 +1,11 @@
+keychain: "/Users/example/Library/Keychains/login.keychain-db"
+version: 512
+class: "genp"
+attributes:
+    0x00000007 <blob>="Claude Code-credentials"
+    0x00000008 <blob>=<NULL>
+    "acct"<blob>="example"
+    "cdat"<timedate>=0x32303236313031303230333834335A00  "20261010203843Z\000"
+    "crtr"<uint32>=<NULL>
+    "mdat"<timedate>=0x32303236313031353030343634325A00  "20261015004642Z\000"
+    "svce"<blob>="Claude Code-credentials"
