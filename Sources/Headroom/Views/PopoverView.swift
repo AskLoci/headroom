@@ -62,6 +62,7 @@ struct PopoverView: View {
 
 struct FooterView: View {
     @Environment(AppModel.self) private var model
+    @AppStorage(ConversationClipboard.localOnlyKey) private var localOnly = true
 
     var body: some View {
         @Bindable var model = model
@@ -77,6 +78,14 @@ struct FooterView: View {
             }
             .buttonStyle(.borderless)
             .help("Refresh")
+            Menu {
+                Toggle("Keep copied conversations on this Mac", isOn: $localOnly)
+            } label: {
+                Image(systemName: "lock")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Clipboard privacy")
             Toggle("Launch at Login", isOn: $model.launchAtLogin)
                 .toggleStyle(.checkbox)
                 .controlSize(.small)

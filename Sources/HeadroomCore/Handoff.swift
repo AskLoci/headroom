@@ -26,7 +26,7 @@ public enum Handoff {
         lines.append("From: \(source) \(item.id), last active \(lastActive)")
         if let reason = item.unfinished { lines.append("Stopped: \(reason.detail)") }
         lines += ["", "The conversation so far is below. Continue from its last message.", "", "---", ""]
-        let header = lines.joined(separator: "\n") + "\n"
+        let header = SecretRedactor.redact(lines.joined(separator: "\n")) + "\n"
 
         let blocks = entries.map { block($0, clip: limit != nil) }
         var body = blocks.joined(separator: "\n\n")
@@ -43,12 +43,15 @@ public enum Handoff {
 
     /// The title without path separators, plus ".md".
     public static func fileName(for item: TranscriptItem) -> String {
-        let cleaned = String(item.title.map { "/:\\".contains($0) ? "-" : $0 }).trimmingCharacters(in: .whitespacesAndNewlines)
-        return (cleaned.isEmpty ? item.id : String(cleaned.prefix(80))) + ".md"
+        let title = SecretRedactor.redact(item.title.isEmpty ? item.id : item.title)
+        let cleaned = String(title.map { "/:\\".contains($0) ? "-" : $0 }).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (cleaned.isEmpty ? "Conversation" : String(cleaned.prefix(80))) + ".md"
     }
 
     static func block(_ entry: ViewerEntry, clip: Bool) -> String {
-        let text = clip ? TranscriptViewer.clipped(entry.text) : entry.text
+        // Redact before clipping, so a truncated key cannot bypass recognition.
+        let redacted = SecretRedactor.redact(entry.text)
+        let text = clip ? TranscriptViewer.clipped(redacted) : redacted
         switch entry.role {
         case .user: return "**User:**\n\(text)"
         case .assistant: return "**Assistant:**\n\(text)"
@@ -73,3 +76,42 @@ public enum Handoff {
         return ([first] + marker + latest).joined(separator: "\n\n")
     }
 }
+
+#if DEBUG && canImport(Testing)
+import Testing
+
+struct HandoffPrivacyTests {
+    @Test func redactsHeadersEveryRoleAndFileNames() {
+        let item = TranscriptItem(id: "11111111-2222-4333-8444-555555555555", provider: .claude, accountId: "example",
+            title: "API_KEY=hidden-value", cwd: "/tmp/token=hidden-value", lastActivity: .distantPast, archived: false,
+            fileURL: URL(filePath: "/example.jsonl"), unfinished: .usageLimit("password=hidden-value"))
+        let entries = [ViewerRole.user, .assistant, .tool].enumerated().map {
+            ViewerEntry(id: $0.offset, role: $0.element, text: "API_KEY=hidden-value")
+        }
+        for limit: Int? in [nil, Handoff.copyLimit] {
+            let text = Handoff.markdown(item: item, entries: entries, lastActive: "now", limit: limit)
+            #expect(!text.contains("hidden-value"))
+            #expect(text.contains("[REDACTED]"))
+        }
+        #expect(!Handoff.fileName(for: item).contains("hidden-value"))
+    }
+
+    @Test func redactsBeforeClippingAndReadsLatestExport() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "headroom-export-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appending(path: "session.jsonl")
+        let message = String(repeating: "a", count: TranscriptViewer.maxEntryLength - 3)
+            + "\n-----BEGIN PRIVATE KEY-----\nprivate-material\n-----END PRIVATE KEY-----"
+        let line: [String: Any] = ["type": "user", "message": ["content": message]]
+        try (JSONSerialization.data(withJSONObject: line, options: .sortedKeys) + Data("\n".utf8)).write(to: file)
+        let item = TranscriptItem(id: "11111111-2222-4333-8444-555555555555", provider: .claude, accountId: "example",
+            title: "Example", cwd: nil, lastActivity: .distantPast, archived: false, fileURL: file)
+        let full = try Handoff.export(item: item, lastActive: "now")
+        #expect(!full.contains("private-material"))
+        #expect(full.contains("[REDACTED PRIVATE KEY]"))
+        let clipped = try Handoff.export(item: item, lastActive: "now", limit: Handoff.copyLimit)
+        #expect(!clipped.contains("BEGIN PRIVATE KEY"))
+    }
+}
+#endif

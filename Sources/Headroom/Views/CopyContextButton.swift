@@ -5,6 +5,7 @@ import SwiftUI
 /// Copies a conversation as a Markdown handoff, ready to paste into a new session.
 struct CopyContextButton: View {
     let item: TranscriptItem
+    @AppStorage(ConversationClipboard.localOnlyKey) private var localOnly = true
     @State private var status: Status = .idle
 
     enum Status {
@@ -20,8 +21,7 @@ struct CopyContextButton: View {
         }
         .buttonStyle(.borderless)
         .disabled(status == .working)
-        .help(item.unfinished == nil ? "Copy this conversation to paste into a new session"
-                                     : "Copy this unfinished conversation to continue it in a new session")
+        .help("Copy this conversation with recognized secrets hidden")
     }
 
     private var symbol: String {
@@ -40,9 +40,7 @@ struct CopyContextButton: View {
             try? Handoff.export(item: item, lastActive: Presentation(now: Date()).timeText(item.lastActivity), limit: Handoff.copyLimit)
         }.value
         if let text {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            status = .copied
+            status = ConversationClipboard.copy(text, localOnly: localOnly) ? .copied : .failed
         } else {
             status = .failed
         }

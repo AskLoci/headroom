@@ -19,6 +19,10 @@ each of your accounts has left, and when it resets.
 - **Handoff.** The copy button puts a conversation on the clipboard as
   Markdown. Paste it into a session in an account that still has usage and
   carry on from there.
+- **Privacy.** Copied and saved conversations hide recognized credentials.
+  Clipboard copies stay on this Mac by default. The lock menu lets you allow
+  copying between your devices. Review exports before sharing; automatic
+  redaction cannot recognize every secret or confidential detail.
 
 ![An account's limits and recent sessions](docs/account.png)
 
@@ -47,6 +51,29 @@ scripts/build-app.sh
 This installs Headroom in `~/Applications`, turns on Launch at Login and opens
 it. If your menu bar is full, open Headroom again from Spotlight to get a
 window.
+
+Use `scripts/build-app.sh --no-install` to build without installing or opening
+the app. Local builds use development signing and hardened runtime.
+
+## Distribute
+
+Release archives require a Developer ID Application certificate and a
+notarytool credential profile stored in Keychain:
+
+```sh
+HEADROOM_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+HEADROOM_NOTARY_PROFILE="your-notary-profile" \
+HEADROOM_BUILD_DIR="/absolute/path/to/new-release" \
+scripts/build-app.sh --release
+```
+
+The release command signs with hardened runtime and a secure timestamp,
+requires Apple's notarization acceptance, staples and validates the ticket,
+and checks Gatekeeper. Only then does it produce `Headroom.zip` and its SHA-256
+checksum. It does not install the app or overwrite an existing release.
+
+Run `scripts/build-app.sh --self-test` to check the release gates with isolated
+test tools; this does not sign or submit a real app.
 
 Headroom is not affiliated with Anthropic or OpenAI.
 

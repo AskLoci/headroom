@@ -16,16 +16,62 @@ public struct TranscriptItem: Sendable, Equatable, Identifiable {
         cwd.map { URL(filePath: $0).lastPathComponent } ?? ""
     }
 
-    public var resumeCommand: String {
+    /// Only provider-issued UUIDs can become commands. Transcript metadata is untrusted.
+    public var resumeCommand: String? {
+        guard UUID(uuidString: id) != nil else { return nil }
+        let session = Shell.quote(id)
         switch provider {
         case .claude:
-            guard let cwd, !cwd.isEmpty else { return "claude --resume \(id)" }
-            return "cd \(Shell.quote(cwd)) && claude --resume \(id)"
+            guard let cwd, !cwd.isEmpty else { return "claude --resume \(session)" }
+            guard cwd.hasPrefix("/"), !cwd.contains("\0") else { return nil }
+            return "cd -- \(Shell.quote(cwd)) && claude --resume \(session)"
         case .codex:
-            return "codex resume \(id)"
+            return "codex resume \(session)"
         }
     }
 }
+
+#if DEBUG && canImport(Testing)
+import Testing
+
+struct ResumeCommandSecurityTests {
+    let validID = "11111111-2222-4333-8444-555555555555"
+
+    func item(_ provider: Provider, id: String, cwd: String? = nil) -> TranscriptItem {
+        TranscriptItem(id: id, provider: provider, accountId: "example", title: "Example", cwd: cwd,
+                       lastActivity: .distantPast, archived: false, fileURL: URL(filePath: "/example.jsonl"))
+    }
+
+    @Test(arguments: ["", "s1", "--help", "id; printf injected", "$(printf injected)", "`printf injected`",
+                      "id\nprintf injected", "id\0suffix", "11111111-2222-4333-8444-555555555555; true"])
+    func rejectsUntrustedIDs(_ id: String) {
+        for provider in Provider.allCases { #expect(item(provider, id: id).resumeCommand == nil) }
+    }
+
+    @Test func acceptsUUIDsAndQuotesWorkingFolders() {
+        #expect(item(.claude, id: validID).resumeCommand == "claude --resume \(validID)")
+        #expect(item(.codex, id: validID).resumeCommand == "codex resume \(validID)")
+        #expect(item(.claude, id: validID, cwd: "/tmp/it's; $(whoami)").resumeCommand
+                == "cd -- '/tmp/it'\\''s; $(whoami)' && claude --resume \(validID)")
+        #expect(item(.claude, id: validID, cwd: "-P").resumeCommand == nil)
+        #expect(item(.claude, id: validID, cwd: "/tmp/a\0b").resumeCommand == nil)
+    }
+
+    @Test func quotedMetadataStaysOneShellArgument() throws {
+        let value = "/tmp/it's; $(printf injected)\nsecond line"
+        let process = Process()
+        process.executableURL = URL(filePath: "/bin/sh")
+        process.arguments = ["-c", "printf '%s' \(Shell.quote(value))"]
+        let output = Pipe()
+        process.standardOutput = output
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+        #expect(String(decoding: data, as: UTF8.self) == value)
+    }
+}
+#endif
 
 public enum Shell {
     public static func quote(_ text: String) -> String {

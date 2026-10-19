@@ -172,7 +172,7 @@ struct TranscriptListsTests {
         #expect(forA[0].title == "Desktop title")
         #expect(forA[0].archived)
         #expect(forA[0].project == "My App")
-        #expect(forA[0].resumeCommand == "cd '/Users/example/My App' && claude --resume s1")
+        #expect(forA[0].resumeCommand == nil) // Synthetic IDs must never become shell commands.
         #expect(forA[1].title == "Prompt text")
         #expect(lists[Account.key(.claude, b)]?.map(\.title) == ["Bridge title"])
         #expect(!lists.values.joined().contains { $0.id == "s4" })
@@ -201,7 +201,7 @@ struct TranscriptListsTests {
         #expect(items.map(\.id) == ["t1", "t3"])
         #expect(items[1].title == "Untitled thread")
         #expect(items[1].archived)
-        #expect(items[0].resumeCommand == "codex resume t1")
+        #expect(items[0].resumeCommand == nil)
         #expect(lists.count == 1)
     }
 

@@ -45,6 +45,7 @@ final class ViewerWindowController: NSWindowController, NSWindowDelegate {
 
 struct TranscriptViewerView: View {
     let item: TranscriptItem
+    @AppStorage(ConversationClipboard.localOnlyKey) private var localOnly = true
     @State private var entries: [ViewerEntry]?
     @State private var failed = false
     @State private var copied = false
@@ -64,21 +65,17 @@ struct TranscriptViewerView: View {
                         .truncationMode(.middle)
                         .textSelection(.enabled)
                 }
-                HStack(spacing: 8) {
-                    Button(copiedContext ? "Copied" : "Copy as Context") { copyContext() }
-                        .disabled(entries == nil)
-                    Button("Save as Markdown…") { save() }
-                        .disabled(entries == nil)
-                    Button(copied ? "Copied" : "Copy Resume Command") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(item.resumeCommand, forType: .string)
-                        copied = true
-                    }
-                    Button("Show in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([item.fileURL])
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { exportButtons; navigationButtons }
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) { exportButtons }
+                        HStack(spacing: 8) { navigationButtons }
                     }
                 }
                 .controlSize(.small)
+                Text("Recognized secrets are hidden in copied and saved conversations. Review before sharing.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .padding(14)
             Divider()
@@ -86,6 +83,25 @@ struct TranscriptViewerView: View {
         }
         .frame(minWidth: 480, minHeight: 360)
         .task { await load() }
+    }
+
+    @ViewBuilder
+    private var exportButtons: some View {
+        Button(copiedContext ? "Copied" : "Copy as Context") { copyContext() }
+            .disabled(entries == nil)
+        Button("Save as Markdown…") { save() }
+            .disabled(entries == nil)
+    }
+
+    @ViewBuilder
+    private var navigationButtons: some View {
+        Button(copied ? "Copied" : "Copy Resume Command") {
+            guard let command = item.resumeCommand else { return }
+            copied = ConversationClipboard.copy(command, localOnly: localOnly)
+        }
+        .disabled(item.resumeCommand == nil)
+        .help(item.resumeCommand == nil ? "This conversation has no valid resume command" : "Copy the command to resume this conversation")
+        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.fileURL]) }
     }
 
     @ViewBuilder
@@ -126,9 +142,7 @@ struct TranscriptViewerView: View {
                 try? Handoff.export(item: item, lastActive: Presentation(now: Date()).timeText(item.lastActivity), limit: Handoff.copyLimit)
             }.value
             guard let text else { return }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            copiedContext = true
+            copiedContext = ConversationClipboard.copy(text, localOnly: localOnly)
         }
     }
 
